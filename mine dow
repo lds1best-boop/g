@@ -58,7 +58,9 @@ local Tabs = {
 local Rs = cloneref(game:GetService("ReplicatedStorage"))
 
 local MiningServiceClient =
-    require(Rs.Shared.Services.MiningService.MiningServiceClient)
+    require(
+        Rs.Shared.Services.MiningService.MiningServiceClient
+    )
 
 local MiningInfo =
     require(Rs.Packages.Info).MiningInfo
@@ -186,7 +188,7 @@ local function isBedrock(block)
 end
 
 ------------------------------------------------
--- GET PRIORITY
+-- PRIORITY
 ------------------------------------------------
 
 local function getPriorityRank(block)
@@ -220,7 +222,6 @@ local function mineBlock(block)
         return false
     end
 
-    -- NEVER MINE BEDROCK
     if isBedrock(block) then
         return false
     end
@@ -265,7 +266,7 @@ local function mineUntilDestroyed(block)
 end
 
 ------------------------------------------------
--- FIND HIGHEST PRIORITY BLOCK
+-- FIND PRIORITY
 ------------------------------------------------
 
 local function findPriorityBlock()
@@ -296,6 +297,80 @@ local function findPriorityBlock()
 end
 
 ------------------------------------------------
+-- FORCE DOWN TO DEPTH
+--
+-- This does NOT assume we moved.
+-- It checks the target block after every
+-- attempt and keeps trying until the
+-- target depth is actually reached.
+------------------------------------------------
+
+local function forceDownToDepth(targetDepth)
+
+    while G.Settings["Auto Mine"] do
+
+        ------------------------------------------------
+        -- CHECK TARGET BLOCK
+        ------------------------------------------------
+
+        local target =
+            getBlock(
+                START_X,
+                targetDepth,
+                START_Z
+            )
+
+        ------------------------------------------------
+        -- TARGET DOES NOT EXIST
+        -- We have reached/passed it.
+        ------------------------------------------------
+
+        if not target then
+            return true
+        end
+
+        ------------------------------------------------
+        -- BEDROCK SAFETY
+        ------------------------------------------------
+
+        if isBedrock(target) then
+            return false
+        end
+
+        ------------------------------------------------
+        -- MINE TARGET
+        ------------------------------------------------
+
+        mineUntilDestroyed(target)
+
+        task.wait()
+
+        ------------------------------------------------
+        -- CHECK AGAIN
+        ------------------------------------------------
+
+        local check =
+            getBlock(
+                START_X,
+                targetDepth,
+                START_Z
+            )
+
+        if not check then
+            return true
+        end
+
+        ------------------------------------------------
+        -- IF STILL THERE, KEEP TRYING
+        ------------------------------------------------
+
+        task.wait()
+    end
+
+    return false
+end
+
+------------------------------------------------
 -- GO DOWN TO -800
 ------------------------------------------------
 
@@ -308,7 +383,7 @@ local function mineDownTo800()
         end
 
         ------------------------------------------------
-        -- PRIORITY INTERRUPTS GOING DOWN
+        -- PRIORITY
         ------------------------------------------------
 
         local priority =
@@ -323,7 +398,7 @@ local function mineDownTo800()
         end
 
         ------------------------------------------------
-        -- MINE BLOCK BELOW
+        -- MINE VERTICAL PATH
         ------------------------------------------------
 
         local block =
@@ -337,6 +412,8 @@ local function mineDownTo800()
 
             if not isBedrock(block) then
                 mineUntilDestroyed(block)
+            else
+                return false
             end
 
         end
@@ -394,7 +471,7 @@ local function getBlocksAtDepth(depth)
     end
 
     ------------------------------------------------
-    -- HIGHEST PRIORITY FIRST
+    -- PRIORITY ORDER
     ------------------------------------------------
 
     table.sort(
@@ -408,7 +485,7 @@ local function getBlocksAtDepth(depth)
 end
 
 ------------------------------------------------
--- MINE 100 BLOCKS ON ONE LAYER
+-- MINE 100 BLOCKS
 ------------------------------------------------
 
 local function mineLayer(depth)
@@ -464,7 +541,7 @@ local function mineLayer(depth)
                 end
 
             ------------------------------------------------
-            -- RANDOM NORMAL BLOCK
+            -- RANDOM BLOCK
             ------------------------------------------------
 
             elseif #normalBlocks > 0 then
@@ -490,10 +567,6 @@ local function mineLayer(depth)
 
             else
 
-                ------------------------------------------------
-                -- NOTHING LEFT ON THIS LAYER
-                ------------------------------------------------
-
                 break
             end
         end
@@ -505,7 +578,13 @@ local function mineLayer(depth)
 end
 
 ------------------------------------------------
--- MINE EVERY 2ND LAYER
+-- RANDOM MINING
+--
+-- -802
+-- -804
+-- -806
+-- -808
+-- ...
 ------------------------------------------------
 
 local function randomMineDown()
@@ -532,16 +611,79 @@ local function randomMineDown()
         else
 
             ------------------------------------------------
+            -- MAKE SURE WE ARE ACTUALLY
+            -- AT THIS DEPTH BEFORE MINING
+            ------------------------------------------------
+
+            local reached =
+                forceDownToDepth(depth)
+
+            if not reached then
+                return
+            end
+
+            if not G.Settings["Auto Mine"] then
+                return
+            end
+
+            ------------------------------------------------
+            -- VERIFY TARGET DEPTH
+            ------------------------------------------------
+
+            local verify =
+                getBlock(
+                    START_X,
+                    depth,
+                    START_Z
+                )
+
+            ------------------------------------------------
+            -- If block still exists, we are
+            -- at this depth and can mine it.
+            ------------------------------------------------
+
+            if verify then
+
+                if isBedrock(verify) then
+                    return
+                end
+
+            end
+
+            ------------------------------------------------
             -- MINE 100 BLOCKS
             ------------------------------------------------
 
             mineLayer(depth)
 
             ------------------------------------------------
-            -- GO DOWN 2 LAYERS
+            -- NEXT TARGET IS 2 LAYERS DOWN
             ------------------------------------------------
 
-            depth -= DEPTH_STEP
+            local nextDepth =
+                depth - DEPTH_STEP
+
+            ------------------------------------------------
+            -- FORCE THE 2-LAYER MOVE
+            ------------------------------------------------
+
+            if nextDepth >= MAX_DEPTH then
+
+                local moved =
+                    forceDownToDepth(
+                        nextDepth
+                    )
+
+                if not moved then
+                    return
+                end
+            end
+
+            ------------------------------------------------
+            -- NEXT LAYER
+            ------------------------------------------------
+
+            depth = nextDepth
         end
 
         task.wait()
@@ -585,22 +727,17 @@ AutoMine:OnChanged(function(value)
             end
 
             ------------------------------------------------
-            -- GO 2 DOWN AND START AT -802
+            -- IMPORTANT:
+            -- ACTUALLY FORCE THE MOVE TO -802
             ------------------------------------------------
 
-            local startBlock =
-                getBlock(
-                    START_X,
-                    FIRST_MINE_DEPTH,
-                    START_Z
+            local firstMove =
+                forceDownToDepth(
+                    FIRST_MINE_DEPTH
                 )
 
-            if startBlock
-                and not isBedrock(startBlock) then
-
-                mineUntilDestroyed(
-                    startBlock
-                )
+            if not firstMove then
+                return
             end
 
             if not G.Settings["Auto Mine"] then
@@ -608,7 +745,8 @@ AutoMine:OnChanged(function(value)
             end
 
             ------------------------------------------------
-            -- MINE -802, -804, -806...
+            -- START:
+            -- -802 → -804 → -806...
             ------------------------------------------------
 
             randomMineDown()
@@ -634,9 +772,10 @@ Tabs.Main:AddParagraph({
 Tabs.Main:AddParagraph({
     Title = "Mining Information",
     Content =
-        "Starts by going down to -800.\n\n" ..
-        "Then starts mining at -802.\n\n" ..
-        "100 blocks are mined at each selected layer.\n\n" ..
+        "Vertical path: 0 → -11800\n\n" ..
+        "Mining starts at -802.\n\n" ..
+        "Each selected layer mines 100 blocks.\n\n" ..
+        "After 100 blocks, the script FORCES and CHECKS the next depth.\n\n" ..
         "Layer pattern:\n" ..
         "-802 → -804 → -806 → -808 → ... → -5000\n\n" ..
         "Priority:\n" ..
