@@ -8,10 +8,15 @@ G.Settings["Auto Mine"] = false
 ------------------------------------------------
 
 local BLOCKS_PER_LAYER = 100
+
 local START_X = 9
 local START_Z = 9
+
 local START_DEPTH = -800
+local FIRST_MINE_DEPTH = -802
 local MAX_DEPTH = -5000
+
+local DEPTH_STEP = 2
 
 ------------------------------------------------
 -- FLUENT
@@ -89,11 +94,13 @@ end
 ------------------------------------------------
 
 local function getBlockInfo(block)
+
     if not block then
         return nil
     end
 
-    local data = MiningServiceClient.blocks[block.Name]
+    local data =
+        MiningServiceClient.blocks[block.Name]
 
     if not data then
         return nil
@@ -105,7 +112,8 @@ local function getBlockInfo(block)
         return nil
     end
 
-    local info = MiningInfo:getBlock(id)
+    local info =
+        MiningInfo:getBlock(id)
 
     if not info then
         return nil
@@ -125,14 +133,16 @@ end
 ------------------------------------------------
 
 local function getCoordinates(block)
+
     if not block then
         return nil
     end
 
-    local x, y, z = string.match(
-        block.Name,
-        "^(-?%d+)_(-?%d+)_(-?%d+)$"
-    )
+    local x, y, z =
+        string.match(
+            block.Name,
+            "^(-?%d+)_(-?%d+)_(-?%d+)$"
+        )
 
     if not x then
         return nil
@@ -146,6 +156,7 @@ end
 ------------------------------------------------
 
 local function getBlock(x, y, z)
+
     return BlocksFolder:FindFirstChild(
         tostring(x) .. "_" ..
         tostring(y) .. "_" ..
@@ -158,11 +169,13 @@ end
 ------------------------------------------------
 
 local function isBedrock(block)
+
     if not block then
         return true
     end
 
-    local info = getBlockInfo(block)
+    local info =
+        getBlockInfo(block)
 
     if not info then
         return false
@@ -177,7 +190,9 @@ end
 ------------------------------------------------
 
 local function getPriorityRank(block)
-    local info = getBlockInfo(block)
+
+    local info =
+        getBlockInfo(block)
 
     if not info then
         return nil
@@ -192,6 +207,7 @@ end
 ------------------------------------------------
 
 local function mineBlock(block)
+
     if not block then
         return false
     end
@@ -224,6 +240,7 @@ end
 ------------------------------------------------
 
 local function mineUntilDestroyed(block)
+
     if not block then
         return false
     end
@@ -252,17 +269,23 @@ end
 ------------------------------------------------
 
 local function findPriorityBlock()
+
     local bestBlock = nil
     local bestRank = math.huge
 
-    for _, block in ipairs(BlocksFolder:GetChildren()) do
+    for _, block in ipairs(
+        BlocksFolder:GetChildren()
+    ) do
 
         if block:GetAttribute("isBlock")
             and not isBedrock(block) then
 
-            local rank = getPriorityRank(block)
+            local rank =
+                getPriorityRank(block)
 
-            if rank and rank < bestRank then
+            if rank
+                and rank < bestRank then
+
                 bestRank = rank
                 bestBlock = block
             end
@@ -270,34 +293,6 @@ local function findPriorityBlock()
     end
 
     return bestBlock
-end
-
-------------------------------------------------
--- HANDLE PRIORITY
-------------------------------------------------
-
-local function handlePriority()
-    while G.Settings["Auto Mine"] do
-
-        local priority = findPriorityBlock()
-
-        if not priority then
-            return false
-        end
-
-        if priority.Parent
-            and not isBedrock(priority) then
-
-            mineUntilDestroyed(priority)
-
-        else
-            return false
-        end
-
-        task.wait()
-    end
-
-    return true
 end
 
 ------------------------------------------------
@@ -313,10 +308,11 @@ local function mineDownTo800()
         end
 
         ------------------------------------------------
-        -- PRIORITY ALWAYS INTERRUPTS GOING DOWN
+        -- PRIORITY INTERRUPTS GOING DOWN
         ------------------------------------------------
 
-        local priority = findPriorityBlock()
+        local priority =
+            findPriorityBlock()
 
         if priority then
             mineUntilDestroyed(priority)
@@ -327,14 +323,15 @@ local function mineDownTo800()
         end
 
         ------------------------------------------------
-        -- BLOCK DIRECTLY BELOW
+        -- MINE BLOCK BELOW
         ------------------------------------------------
 
-        local block = getBlock(
-            START_X,
-            y,
-            START_Z
-        )
+        local block =
+            getBlock(
+                START_X,
+                y,
+                START_Z
+            )
 
         if block then
 
@@ -359,7 +356,9 @@ local function getBlocksAtDepth(depth)
     local priorityBlocks = {}
     local normalBlocks = {}
 
-    for _, block in ipairs(BlocksFolder:GetChildren()) do
+    for _, block in ipairs(
+        BlocksFolder:GetChildren()
+    ) do
 
         if block:GetAttribute("isBlock")
             and not isBedrock(block) then
@@ -395,7 +394,7 @@ local function getBlocksAtDepth(depth)
     end
 
     ------------------------------------------------
-    -- LOWEST RANK = HIGHEST PRIORITY
+    -- HIGHEST PRIORITY FIRST
     ------------------------------------------------
 
     table.sort(
@@ -409,7 +408,7 @@ local function getBlocksAtDepth(depth)
 end
 
 ------------------------------------------------
--- MINE 100 BLOCKS PER LAYER
+-- MINE 100 BLOCKS ON ONE LAYER
 ------------------------------------------------
 
 local function mineLayer(depth)
@@ -420,7 +419,7 @@ local function mineLayer(depth)
         and G.Settings["Auto Mine"] do
 
         ------------------------------------------------
-        -- GLOBAL PRIORITY ALWAYS INTERRUPTS
+        -- GLOBAL PRIORITY
         ------------------------------------------------
 
         local globalPriority =
@@ -428,21 +427,24 @@ local function mineLayer(depth)
 
         if globalPriority then
 
-            mineUntilDestroyed(globalPriority)
+            mineUntilDestroyed(
+                globalPriority
+            )
 
             task.wait()
 
         else
 
             ------------------------------------------------
-            -- CURRENT DEPTH
+            -- GET CURRENT LAYER
             ------------------------------------------------
 
-            local priorityBlocks, normalBlocks =
+            local priorityBlocks,
+                  normalBlocks =
                 getBlocksAtDepth(depth)
 
             ------------------------------------------------
-            -- PRIORITY ON CURRENT LAYER
+            -- PRIORITY BLOCK
             ------------------------------------------------
 
             if #priorityBlocks > 0 then
@@ -454,13 +456,15 @@ local function mineLayer(depth)
                     and target.Parent
                     and not isBedrock(target) then
 
-                    mineUntilDestroyed(target)
+                    mineUntilDestroyed(
+                        target
+                    )
 
                     mined += 1
                 end
 
             ------------------------------------------------
-            -- NORMAL RANDOM BLOCK
+            -- RANDOM NORMAL BLOCK
             ------------------------------------------------
 
             elseif #normalBlocks > 0 then
@@ -477,7 +481,9 @@ local function mineLayer(depth)
                     and target.Parent
                     and not isBedrock(target) then
 
-                    mineUntilDestroyed(target)
+                    mineUntilDestroyed(
+                        target
+                    )
 
                     mined += 1
                 end
@@ -499,14 +505,15 @@ local function mineLayer(depth)
 end
 
 ------------------------------------------------
--- RANDOM MINING BELOW -800
+-- MINE EVERY 2ND LAYER
 ------------------------------------------------
 
 local function randomMineDown()
 
-    local depth = START_DEPTH
+    local depth =
+        FIRST_MINE_DEPTH
 
-    while depth > MAX_DEPTH
+    while depth >= MAX_DEPTH
         and G.Settings["Auto Mine"] do
 
         ------------------------------------------------
@@ -518,21 +525,23 @@ local function randomMineDown()
 
         if priority then
 
-            mineUntilDestroyed(priority)
+            mineUntilDestroyed(
+                priority
+            )
 
         else
 
             ------------------------------------------------
-            -- MINE 100 BLOCKS ON CURRENT LAYER
+            -- MINE 100 BLOCKS
             ------------------------------------------------
 
             mineLayer(depth)
 
             ------------------------------------------------
-            -- NEXT LAYER
+            -- GO DOWN 2 LAYERS
             ------------------------------------------------
 
-            depth -= 1
+            depth -= DEPTH_STEP
         end
 
         task.wait()
@@ -544,10 +553,13 @@ end
 ------------------------------------------------
 
 local AutoMine =
-    Tabs.Main:AddToggle("AutoMine", {
-        Title = "Auto Mine",
-        Default = false
-    })
+    Tabs.Main:AddToggle(
+        "AutoMine",
+        {
+            Title = "Auto Mine",
+            Default = false
+        }
+    )
 
 AutoMine:OnChanged(function(value)
 
@@ -573,13 +585,35 @@ AutoMine:OnChanged(function(value)
             end
 
             ------------------------------------------------
-            -- RANDOM MINING
+            -- GO 2 DOWN AND START AT -802
+            ------------------------------------------------
+
+            local startBlock =
+                getBlock(
+                    START_X,
+                    FIRST_MINE_DEPTH,
+                    START_Z
+                )
+
+            if startBlock
+                and not isBedrock(startBlock) then
+
+                mineUntilDestroyed(
+                    startBlock
+                )
+            end
+
+            if not G.Settings["Auto Mine"] then
+                return
+            end
+
+            ------------------------------------------------
+            -- MINE -802, -804, -806...
             ------------------------------------------------
 
             randomMineDown()
 
         end)
-
     end
 end)
 
@@ -589,7 +623,8 @@ end)
 
 Tabs.Main:AddParagraph({
     Title = "Mining Amount",
-    Content = "100 blocks per layer"
+    Content =
+        "100 blocks every 2 layers"
 })
 
 ------------------------------------------------
@@ -599,10 +634,12 @@ Tabs.Main:AddParagraph({
 Tabs.Main:AddParagraph({
     Title = "Mining Information",
     Content =
+        "Starts by going down to -800.\n\n" ..
+        "Then starts mining at -802.\n\n" ..
+        "100 blocks are mined at each selected layer.\n\n" ..
+        "Layer pattern:\n" ..
+        "-802 → -804 → -806 → -808 → ... → -5000\n\n" ..
         "Priority:\n" ..
         "Abyssalite → Prismite → Glitched → Luminite → Frost → Pinkydreamy → Chest 1 → Chest 2 → Chest 3 → Chest 4\n\n" ..
-        "100 blocks are mined per layer.\n" ..
-        "Starts at -800 and mines down to -5000.\n" ..
-        "Priority blocks interrupt normal mining.\n" ..
         "Bedrock is NEVER mined."
 })
