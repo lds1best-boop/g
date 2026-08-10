@@ -1,0 +1,210 @@
+------------------------------------------------------------
+-- PRIORITY BLOCKS
+------------------------------------------------------------
+
+local PriorityBlocks = {
+    PinkydreamyOre = true,
+    LuminiteOre = true,
+    FrostOre = true,
+
+    LootChest3 = true,
+    LootChest2 = true,
+    LootChest1 = true,
+    LootChest4 = true,
+
+    GlitchedOre = true,
+    PrismiteOre = true,
+    AbyssaliteOre = true,
+}
+
+------------------------------------------------------------
+-- GET BLOCK INFO
+------------------------------------------------------------
+
+local function getBlockInfo(block)
+
+    if not block then
+        return nil
+    end
+
+    local blockData =
+        MiningServiceClient.blocks[block.Name]
+
+    if not blockData then
+        return nil
+    end
+
+    local blockId = blockData[1]
+
+    if blockId == "None" then
+        return nil
+    end
+
+    local info = MiningInfo:getBlock(blockId)
+
+    if not info then
+        return nil
+    end
+
+    return {
+        Id = blockId,
+        Name = info.name
+    }
+end
+
+------------------------------------------------------------
+-- RANDOM MINING DOWNWARD
+------------------------------------------------------------
+
+local currentDepth = -800
+
+while G.Settings["Auto Mine"] do
+
+    local minedThisLayer = 0
+
+    --------------------------------------------------------
+    -- EXACTLY 10 BLOCKS PER LAYER
+    --------------------------------------------------------
+
+    while minedThisLayer < 10
+        and G.Settings["Auto Mine"] do
+
+        local priorityBlocks = {}
+        local normalBlocks = {}
+
+        ----------------------------------------------------
+        -- FIND BLOCKS AT CURRENT DEPTH
+        ----------------------------------------------------
+
+        for _, block in ipairs(BlocksFolder:GetChildren()) do
+
+            if block:GetAttribute("isBlock") then
+
+                local x, y, z =
+                    string.match(
+                        block.Name,
+                        "^(-?%d+)_(-?%d+)_(-?%d+)$"
+                    )
+
+                x = tonumber(x)
+                y = tonumber(y)
+                z = tonumber(z)
+
+                if x and y and z
+                    and y == currentDepth then
+
+                    local info = getBlockInfo(block)
+
+                    if info
+                        and info.Id ~= "Bedrock" then
+
+                        if PriorityBlocks[info.Id] then
+
+                            table.insert(
+                                priorityBlocks,
+                                block
+                            )
+
+                        else
+
+                            table.insert(
+                                normalBlocks,
+                                block
+                            )
+
+                        end
+                    end
+                end
+            end
+        end
+
+        ----------------------------------------------------
+        -- PRIORITY FIRST
+        ----------------------------------------------------
+
+        local target
+
+        if #priorityBlocks > 0 then
+
+            target =
+                priorityBlocks[
+                    math.random(
+                        1,
+                        #priorityBlocks
+                    )
+                ]
+
+        elseif #normalBlocks > 0 then
+
+            target =
+                normalBlocks[
+                    math.random(
+                        1,
+                        #normalBlocks
+                    )
+                ]
+
+        else
+
+            -- Nothing at this depth
+            break
+
+        end
+
+        ----------------------------------------------------
+        -- NEVER MINE BEDROCK
+        ----------------------------------------------------
+
+        local info = getBlockInfo(target)
+
+        if info and info.Id ~= "Bedrock" then
+
+            while target.Parent
+                and G.Settings["Auto Mine"] do
+
+                local currentInfo =
+                    getBlockInfo(target)
+
+                if not currentInfo then
+                    break
+                end
+
+                if currentInfo.Id == "Bedrock" then
+                    break
+                end
+
+                local _, y =
+                    string.match(
+                        target.Name,
+                        "^(-?%d+)_(-?%d+)_(-?%d+)$"
+                    )
+
+                y = tonumber(y)
+
+                if y ~= currentDepth then
+                    break
+                end
+
+                mineBlock(target)
+
+                task.wait()
+
+            end
+
+            minedThisLayer =
+                minedThisLayer + 1
+
+        end
+
+    end
+
+    --------------------------------------------------------
+    -- NEXT DEPTH
+    --------------------------------------------------------
+
+    currentDepth =
+        currentDepth - 1
+
+    task.wait()
+
+end
