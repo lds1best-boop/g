@@ -1,1 +1,659 @@
-hi
+local G = getgenv()
+
+G.Settings = G.Settings or {}
+G.Settings["Auto Mine"] = false
+G.Settings["Blocks Per Layer"] = 10
+
+------------------------------------------------------------
+-- FLUENT
+------------------------------------------------------------
+
+local Fluent = loadstring(game:HttpGet(
+    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"
+))()
+
+local SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"
+))()
+
+local InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"
+))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Mining Hub",
+    SubTitle = "Auto Miner",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({
+        Title = "Main",
+        Icon = ""
+    })
+}
+
+------------------------------------------------------------
+-- SERVICES
+------------------------------------------------------------
+
+local Rs = cloneref(game:GetService("ReplicatedStorage"))
+
+local MiningServiceClient =
+    require(Rs.Shared.Services.MiningService.MiningServiceClient)
+
+local MiningInfo =
+    require(Rs.Packages.Info).MiningInfo
+
+local BlocksFolder =
+    workspace.Maps.Mining.Blocks
+
+------------------------------------------------------------
+-- PRIORITY ORDER
+------------------------------------------------------------
+
+local PriorityOrder = {
+    "AbyssaliteOre",
+    "PrismiteOre",
+    "GlitchedOre",
+    "LuminiteOre",
+    "FrostOre",
+    "PinkydreamyOre",
+    "LootChest1",
+    "LootChest2",
+    "LootChest3",
+    "LootChest4"
+}
+
+local PriorityRank = {}
+
+for i, name in ipairs(PriorityOrder) do
+    PriorityRank[name] = i
+end
+
+------------------------------------------------------------
+-- GET BLOCK INFO
+------------------------------------------------------------
+
+local function getBlockInfo(block)
+
+    if not block then
+        return nil
+    end
+
+    local data =
+        MiningServiceClient.blocks[block.Name]
+
+    if not data then
+        return nil
+    end
+
+    local id = data[1]
+
+    if not id or id == "None" then
+        return nil
+    end
+
+    local info =
+        MiningInfo:getBlock(id)
+
+    if not info then
+        return nil
+    end
+
+    return {
+        Id = id,
+        Name = info.name,
+        HP = info.hp,
+        Value = info.value,
+        Model = info.model
+    }
+end
+
+------------------------------------------------------------
+-- GET COORDINATES
+------------------------------------------------------------
+
+local function getCoordinates(block)
+
+    if not block then
+        return nil
+    end
+
+    local x, y, z =
+        string.match(
+            block.Name,
+            "^(-?%d+)_(-?%d+)_(-?%d+)$"
+        )
+
+    if not x then
+        return nil
+    end
+
+    return tonumber(x), tonumber(y), tonumber(z)
+end
+
+------------------------------------------------------------
+-- GET BLOCK
+------------------------------------------------------------
+
+local function getBlock(x, y, z)
+
+    return BlocksFolder:FindFirstChild(
+        tostring(x) .. "_" ..
+        tostring(y) .. "_" ..
+        tostring(z)
+    )
+end
+
+------------------------------------------------------------
+-- NEVER MINE BEDROCK
+------------------------------------------------------------
+
+local function isBedrock(block)
+
+    if not block then
+        return true
+    end
+
+    local info = getBlockInfo(block)
+
+    if not info then
+        return false
+    end
+
+    return info.Id == "Bedrock"
+        or info.Name == "Bedrock"
+end
+
+------------------------------------------------------------
+-- CHECK IF PRIORITY
+------------------------------------------------------------
+
+local function getPriorityRank(block)
+
+    local info = getBlockInfo(block)
+
+    if not info then
+        return nil
+    end
+
+    return PriorityRank[info.Id]
+        or PriorityRank[info.Name]
+end
+
+------------------------------------------------------------
+-- MINE BLOCK
+------------------------------------------------------------
+
+local function mineBlock(block)
+
+    if not block then
+        return false
+    end
+
+    if not block.Parent then
+        return false
+    end
+
+    if not block:GetAttribute("isBlock") then
+        return false
+    end
+
+    -- NEVER MINE BEDROCK
+    if isBedrock(block) then
+        return false
+    end
+
+    if not MiningServiceClient.mineFolder then
+        return false
+    end
+
+    MiningServiceClient.currentBlock = block
+    MiningServiceClient:damageBlock()
+
+    return true
+end
+
+------------------------------------------------------------
+-- MINE UNTIL DESTROYED
+------------------------------------------------------------
+
+local function mineUntilDestroyed(block)
+
+    if not block then
+        return false
+    end
+
+    if isBedrock(block) then
+        return false
+    end
+
+    while block.Parent
+        and G.Settings["Auto Mine"] do
+
+        if isBedrock(block) then
+            return false
+        end
+
+        mineBlock(block)
+
+        task.wait()
+    end
+
+    return true
+end
+
+------------------------------------------------------------
+-- FIND HIGHEST PRIORITY BLOCK
+------------------------------------------------------------
+
+local function findPriorityBlock()
+
+    local bestBlock = nil
+    local bestRank = math.huge
+
+    for _, block in ipairs(BlocksFolder:GetChildren()) do
+
+        if block:GetAttribute("isBlock")
+            and not isBedrock(block) then
+
+            local rank = getPriorityRank(block)
+
+            if rank and rank < bestRank then
+
+                bestRank = rank
+                bestBlock = block
+
+            end
+        end
+    end
+
+    return bestBlock
+end
+
+------------------------------------------------------------
+-- MINE PRIORITY IF FOUND
+------------------------------------------------------------
+
+local function minePriorityIfFound()
+
+    local target = findPriorityBlock()
+
+    if target then
+
+        mineUntilDestroyed(target)
+
+        return true
+    end
+
+    return false
+end
+
+------------------------------------------------------------
+-- STRAIGHT DOWN
+------------------------------------------------------------
+
+local function mineDownTo800()
+
+    for y = 0, -800, -1 do
+
+        if not G.Settings["Auto Mine"] then
+            return false
+        end
+
+        ----------------------------------------------------
+        -- PRIORITY ALWAYS INTERRUPTS DOWNWARD MINING
+        ----------------------------------------------------
+
+        while G.Settings["Auto Mine"] do
+
+            local priority =
+                findPriorityBlock()
+
+            if not priority then
+                break
+            end
+
+            mineUntilDestroyed(priority)
+        end
+
+        if not G.Settings["Auto Mine"] then
+            return false
+        end
+
+        ----------------------------------------------------
+        -- MINE THE BLOCK DIRECTLY BELOW
+        ----------------------------------------------------
+
+        local block =
+            getBlock(9, y, 9)
+
+        -- Skip missing blocks
+        if block then
+
+            if not isBedrock(block) then
+                mineUntilDestroyed(block)
+            end
+
+        end
+    end
+
+    return true
+end
+
+------------------------------------------------------------
+-- GET BLOCKS AT DEPTH
+------------------------------------------------------------
+
+local function getBlocksAtDepth(depth)
+
+    local priorityBlocks = {}
+    local normalBlocks = {}
+
+    for _, block in ipairs(BlocksFolder:GetChildren()) do
+
+        if block:GetAttribute("isBlock")
+            and not isBedrock(block) then
+
+            local x, y, z =
+                getCoordinates(block)
+
+            if y == depth then
+
+                local rank =
+                    getPriorityRank(block)
+
+                if rank then
+
+                    table.insert(
+                        priorityBlocks,
+                        {
+                            Block = block,
+                            Rank = rank
+                        }
+                    )
+
+                else
+
+                    table.insert(
+                        normalBlocks,
+                        block
+                    )
+
+                end
+            end
+        end
+    end
+
+    table.sort(
+        priorityBlocks,
+        function(a, b)
+            return a.Rank < b.Rank
+        end
+    )
+
+    return priorityBlocks, normalBlocks
+end
+
+------------------------------------------------------------
+-- MINE CURRENT LAYER
+------------------------------------------------------------
+
+local function mineLayer(depth)
+
+    local mined = 0
+
+    while mined < G.Settings["Blocks Per Layer"]
+        and G.Settings["Auto Mine"] do
+
+        ----------------------------------------------------
+        -- PRIORITY CAN INTERRUPT AT ANY TIME
+        ----------------------------------------------------
+
+        local globalPriority =
+            findPriorityBlock()
+
+        if globalPriority then
+
+            mineUntilDestroyed(globalPriority)
+
+            continue
+        end
+
+        ----------------------------------------------------
+        -- GET CURRENT DEPTH BLOCKS
+        ----------------------------------------------------
+
+        local priorityBlocks, normalBlocks =
+            getBlocksAtDepth(depth)
+
+        ----------------------------------------------------
+        -- PRIORITY AT THIS DEPTH
+        ----------------------------------------------------
+
+        if #priorityBlocks > 0 then
+
+            local target =
+                priorityBlocks[1].Block
+
+            if target
+                and target.Parent
+                and not isBedrock(target) then
+
+                mineUntilDestroyed(target)
+                mined += 1
+
+            end
+
+            continue
+        end
+
+        ----------------------------------------------------
+        -- NORMAL RANDOM BLOCK
+        ----------------------------------------------------
+
+        if #normalBlocks == 0 then
+            break
+        end
+
+        local target =
+            normalBlocks[
+                math.random(
+                    1,
+                    #normalBlocks
+                )
+            ]
+
+        if target
+            and target.Parent
+            and not isBedrock(target) then
+
+            mineUntilDestroyed(target)
+            mined += 1
+        end
+
+        task.wait()
+    end
+end
+
+------------------------------------------------------------
+-- RANDOM MINING DOWNWARD
+------------------------------------------------------------
+
+local function randomMineDown()
+
+    local depth = -800
+
+    while depth > -5000
+        and G.Settings["Auto Mine"] do
+
+        ----------------------------------------------------
+        -- PRIORITY FIRST
+        ----------------------------------------------------
+
+        local priority =
+            findPriorityBlock()
+
+        if priority then
+
+            mineUntilDestroyed(priority)
+
+        else
+
+            ------------------------------------------------
+            -- MINE 10 / 25 / 50 AT THIS DEPTH
+            ------------------------------------------------
+
+            mineLayer(depth)
+
+            ------------------------------------------------
+            -- NEXT DEPTH
+            ------------------------------------------------
+
+            depth -= 1
+        end
+
+        task.wait()
+    end
+end
+
+------------------------------------------------------------
+-- AUTO MINE TOGGLE
+------------------------------------------------------------
+
+local AutoMine =
+    Tabs.Main:AddToggle("AutoMine", {
+        Title = "Auto Mine",
+        Default = false
+    })
+
+AutoMine:OnChanged(function()
+
+    G.Settings["Auto Mine"] =
+        Options.AutoMine.Value
+
+    if Options.AutoMine.Value then
+
+        task.spawn(function()
+
+            ------------------------------------------------
+            -- GO TO -800 FIRST
+            ------------------------------------------------
+
+            local reached =
+                mineDownTo800()
+
+            if not reached then
+                return
+            end
+
+            if not G.Settings["Auto Mine"] then
+                return
+            end
+
+            ------------------------------------------------
+            -- RANDOM MINING BELOW -800
+            ------------------------------------------------
+
+            randomMineDown()
+
+        end)
+    end
+end)
+
+------------------------------------------------------------
+-- 10 BLOCKS
+------------------------------------------------------------
+
+local Mine10 =
+    Tabs.Main:AddToggle("Mine10", {
+        Title = "10 Blocks Per Layer",
+        Default = true
+    })
+
+Mine10:OnChanged(function()
+
+    if Options.Mine10.Value then
+
+        G.Settings["Blocks Per Layer"] = 10
+
+        if Options.Mine25.Value then
+            Options.Mine25:SetValue(false)
+        end
+
+        if Options.Mine50.Value then
+            Options.Mine50:SetValue(false)
+        end
+
+    end
+end)
+
+------------------------------------------------------------
+-- 25 BLOCKS
+------------------------------------------------------------
+
+local Mine25 =
+    Tabs.Main:AddToggle("Mine25", {
+        Title = "25 Blocks Per Layer",
+        Default = false
+    })
+
+Mine25:OnChanged(function()
+
+    if Options.Mine25.Value then
+
+        G.Settings["Blocks Per Layer"] = 25
+
+        if Options.Mine10.Value then
+            Options.Mine10:SetValue(false)
+        end
+
+        if Options.Mine50.Value then
+            Options.Mine50:SetValue(false)
+        end
+
+    end
+end)
+
+------------------------------------------------------------
+-- 50 BLOCKS
+------------------------------------------------------------
+
+local Mine50 =
+    Tabs.Main:AddToggle("Mine50", {
+        Title = "50 Blocks Per Layer",
+        Default = false
+    })
+
+Mine50:OnChanged(function()
+
+    if Options.Mine50.Value then
+
+        G.Settings["Blocks Per Layer"] = 50
+
+        if Options.Mine10.Value then
+            Options.Mine10:SetValue(false)
+        end
+
+        if Options.Mine25.Value then
+            Options.Mine25:SetValue(false)
+        end
+
+    end
+end)
+
+------------------------------------------------------------
+-- INFO
+------------------------------------------------------------
+
+Tabs.Main:AddParagraph({
+    Title = "Mining Settings",
+    Content =
+        "Priority: Abyssalite > Prismite > Glitched > Luminite > Frost > Pinkydreamy > Chest1 > Chest2 > Chest3 > Chest4\n\n" ..
+        "Bedrock is never mined."
+})
