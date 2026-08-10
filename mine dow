@@ -25,7 +25,7 @@ local START_Z = 9
 local START_Y = 0
 local RANDOM_START_Y = -800
 
-local BLOCKS_PER_LAYER = 100
+local BLOCKS_PER_LAYER = 25
 
 -- Do not ever mine this depth or below
 local BEDROCK_DEPTH = -5000
@@ -429,7 +429,7 @@ end
 
 
 ------------------------------------------------------------
--- MINE 100 BLOCKS AT ONE LAYER
+-- MINE 25 BLOCKS AT ONE LAYER
 ------------------------------------------------------------
 
 local function mineLayer(depth)
@@ -518,7 +518,7 @@ while G.Settings["Auto Mine"]
     end
 
     --------------------------------------------------------
-    -- MINE 100 NORMAL BLOCKS
+    -- MINE 25 NORMAL BLOCKS
     --------------------------------------------------------
 
     mineLayer(depth)
