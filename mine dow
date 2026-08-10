@@ -1,21 +1,50 @@
+local G = getgenv()
+
+G.Settings = G.Settings or {}
+G.Settings["Auto Mine"] = false
+
+local lib = loadstring(game:HttpGet("https://projectlds.online/loader/Library"))()
+
+local window = lib:start("Button Eternal 2", "1.0", true)
+
+local tabMain = window:addTab("Main")
+
+local Rs = cloneref(game:GetService("ReplicatedStorage"))
+
+local BlocksData =
+    require(Rs.Shared.Info.MiningInfo.Blocks)
+
+local MiningServiceClient =
+    require(Rs.Shared.Services.MiningService.MiningServiceClient)
+
+local MiningInfo =
+    require(Rs.Packages.Info).MiningInfo
+
+local BlocksFolder =
+    workspace.Maps.Mining.Blocks
+
+
 ------------------------------------------------------------
--- PRIORITY BLOCKS
+-- PRIORITY ORES / CHESTS
 ------------------------------------------------------------
 
 local PriorityBlocks = {
+
     PinkydreamyOre = true,
     LuminiteOre = true,
     FrostOre = true,
 
+    LootChest4 = true,
     LootChest3 = true,
     LootChest2 = true,
     LootChest1 = true,
-    LootChest4 = true,
 
     GlitchedOre = true,
     PrismiteOre = true,
     AbyssaliteOre = true,
+
 }
+
 
 ------------------------------------------------------------
 -- GET BLOCK INFO
@@ -36,11 +65,16 @@ local function getBlockInfo(block)
 
     local blockId = blockData[1]
 
+    if not blockId then
+        return nil
+    end
+
     if blockId == "None" then
         return nil
     end
 
-    local info = MiningInfo:getBlock(blockId)
+    local info =
+        MiningInfo:getBlock(blockId)
 
     if not info then
         return nil
@@ -48,106 +82,294 @@ local function getBlockInfo(block)
 
     return {
         Id = blockId,
-        Name = info.name
+        Name = info.name,
+        HP = info.hp,
+        Value = info.value,
+        Model = info.model
     }
+
 end
 
+
 ------------------------------------------------------------
--- RANDOM MINING DOWNWARD
+-- GET COORDINATES FROM BLOCK NAME
 ------------------------------------------------------------
 
-local currentDepth = -800
+local function getBlockCoordinates(block)
 
-while G.Settings["Auto Mine"] do
+    if not block then
+        return nil
+    end
 
-    local minedThisLayer = 0
+    local x, y, z =
+        string.match(
+            block.Name,
+            "^(-?%d+)_(-?%d+)_(-?%d+)$"
+        )
 
-    --------------------------------------------------------
-    -- EXACTLY 10 BLOCKS PER LAYER
-    --------------------------------------------------------
+    if not x or not y or not z then
+        return nil
+    end
 
-    while minedThisLayer < 10
+    return tonumber(x), tonumber(y), tonumber(z)
+
+end
+
+
+------------------------------------------------------------
+-- GET BLOCK AT COORDINATE
+------------------------------------------------------------
+
+local function getBlockAtCoordinate(x, y, z)
+
+    local blockName =
+        tostring(x) .. "_" ..
+        tostring(y) .. "_" ..
+        tostring(z)
+
+    return BlocksFolder:FindFirstChild(blockName)
+
+end
+
+
+------------------------------------------------------------
+-- CHECK BEDROCK
+------------------------------------------------------------
+
+local function isBedrock(block)
+
+    if not block then
+        return true
+    end
+
+    local info =
+        getBlockInfo(block)
+
+    if not info then
+        return false
+    end
+
+    return info.Id == "Bedrock"
+        or info.Name == "Bedrock"
+
+end
+
+
+------------------------------------------------------------
+-- MINE BLOCK
+------------------------------------------------------------
+
+local function mineBlock(block)
+
+    if not block then
+        return false
+    end
+
+    if not block.Parent then
+        return false
+    end
+
+    if not block:GetAttribute("isBlock") then
+        return false
+    end
+
+    if isBedrock(block) then
+        return false
+    end
+
+    if not MiningServiceClient.mineFolder then
+        return false
+    end
+
+    MiningServiceClient.currentBlock = block
+
+    MiningServiceClient:damageBlock()
+
+    return true
+
+end
+
+
+------------------------------------------------------------
+-- MINE ONE BLOCK UNTIL DESTROYED
+------------------------------------------------------------
+
+local function mineUntilDestroyed(block)
+
+    if not block then
+        return false
+    end
+
+    if isBedrock(block) then
+        return false
+    end
+
+    while block.Parent
         and G.Settings["Auto Mine"] do
 
-        local priorityBlocks = {}
-        local normalBlocks = {}
-
-        ----------------------------------------------------
-        -- FIND BLOCKS AT CURRENT DEPTH
-        ----------------------------------------------------
-
-        for _, block in ipairs(BlocksFolder:GetChildren()) do
-
-            if block:GetAttribute("isBlock") then
-
-                local x, y, z =
-                    string.match(
-                        block.Name,
-                        "^(-?%d+)_(-?%d+)_(-?%d+)$"
-                    )
-
-                x = tonumber(x)
-                y = tonumber(y)
-                z = tonumber(z)
-
-                if x and y and z
-                    and y == currentDepth then
-
-                    local info = getBlockInfo(block)
-
-                    if info
-                        and info.Id ~= "Bedrock" then
-
-                        if PriorityBlocks[info.Id] then
-
-                            table.insert(
-                                priorityBlocks,
-                                block
-                            )
-
-                        else
-
-                            table.insert(
-                                normalBlocks,
-                                block
-                            )
-
-                        end
-                    end
-                end
-            end
+        if isBedrock(block) then
+            break
         end
+
+        mineBlock(block)
+
+        task.wait()
+
+    end
+
+    return true
+
+end
+
+
+------------------------------------------------------------
+-- GO STRAIGHT DOWN
+------------------------------------------------------------
+
+local function mineDownTo800()
+
+    --------------------------------------------------------
+    -- START
+    -- 9_0_9
+    -- 9_-1_9
+    -- 9_-2_9
+    -- ...
+    -- 9_-800_9
+    --------------------------------------------------------
+
+    for y = 0, -800, -1 do
+
+        if not G.Settings["Auto Mine"] then
+            return false
+        end
+
+        local block =
+            getBlockAtCoordinate(
+                9,
+                y,
+                9
+            )
+
+        ----------------------------------------------------
+        -- NO BLOCK = SKIP
+        ----------------------------------------------------
+
+        if block then
+
+            if not isBedrock(block) then
+
+                mineUntilDestroyed(block)
+
+            end
+
+        end
+
+    end
+
+    return true
+
+end
+
+
+------------------------------------------------------------
+-- GET BLOCKS AT DEPTH
+------------------------------------------------------------
+
+local function getBlocksAtDepth(depth)
+
+    local priority = {}
+    local normal = {}
+
+    for _, block in ipairs(BlocksFolder:GetChildren()) do
+
+        if block:GetAttribute("isBlock") then
+
+            local x, y, z =
+                getBlockCoordinates(block)
+
+            if y == depth then
+
+                local info =
+                    getBlockInfo(block)
+
+                if info
+                    and info.Id ~= "Bedrock"
+                    and info.Name ~= "Bedrock" then
+
+                    if PriorityBlocks[info.Id]
+                        or PriorityBlocks[info.Name] then
+
+                        table.insert(
+                            priority,
+                            block
+                        )
+
+                    else
+
+                        table.insert(
+                            normal,
+                            block
+                        )
+
+                    end
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return priority, normal
+
+end
+
+
+------------------------------------------------------------
+-- MINE 10 BLOCKS AT CURRENT DEPTH
+------------------------------------------------------------
+
+local function mineLayer(depth)
+
+    local mined = 0
+
+    while mined < 10
+        and G.Settings["Auto Mine"] do
+
+        local priority, normal =
+            getBlocksAtDepth(depth)
+
+        local target
 
         ----------------------------------------------------
         -- PRIORITY FIRST
         ----------------------------------------------------
 
-        local target
-
-        if #priorityBlocks > 0 then
+        if #priority > 0 then
 
             target =
-                priorityBlocks[
+                priority[
                     math.random(
                         1,
-                        #priorityBlocks
+                        #priority
                     )
                 ]
 
-        elseif #normalBlocks > 0 then
+        elseif #normal > 0 then
 
             target =
-                normalBlocks[
+                normal[
                     math.random(
                         1,
-                        #normalBlocks
+                        #normal
                     )
                 ]
 
         else
 
-            -- Nothing at this depth
-            break
+            -- Nothing on this layer
+            return
 
         end
 
@@ -155,56 +377,111 @@ while G.Settings["Auto Mine"] do
         -- NEVER MINE BEDROCK
         ----------------------------------------------------
 
-        local info = getBlockInfo(target)
+        if target
+            and not isBedrock(target) then
 
-        if info and info.Id ~= "Bedrock" then
+            local _, targetY =
+                getBlockCoordinates(target)
 
-            while target.Parent
-                and G.Settings["Auto Mine"] do
+            if targetY == depth then
 
-                local currentInfo =
-                    getBlockInfo(target)
+                mineUntilDestroyed(target)
 
-                if not currentInfo then
-                    break
-                end
-
-                if currentInfo.Id == "Bedrock" then
-                    break
-                end
-
-                local _, y =
-                    string.match(
-                        target.Name,
-                        "^(-?%d+)_(-?%d+)_(-?%d+)$"
-                    )
-
-                y = tonumber(y)
-
-                if y ~= currentDepth then
-                    break
-                end
-
-                mineBlock(target)
-
-                task.wait()
+                mined += 1
 
             end
 
-            minedThisLayer =
-                minedThisLayer + 1
+        end
+
+        task.wait()
+
+    end
+
+end
+
+
+------------------------------------------------------------
+-- RANDOM MINING DOWNWARD
+------------------------------------------------------------
+
+local function randomMineDown()
+
+    local depth = -800
+
+    --------------------------------------------------------
+    -- BEDROCK IS AT -5000
+    -- NEVER ATTEMPT TO MINE -5000
+    --------------------------------------------------------
+
+    while depth > -5000
+        and G.Settings["Auto Mine"] do
+
+        ----------------------------------------------------
+        -- MINE 10 BLOCKS
+        ----------------------------------------------------
+
+        mineLayer(depth)
+
+        if not G.Settings["Auto Mine"] then
+            return
+        end
+
+        ----------------------------------------------------
+        -- GO DOWN ONE LAYER
+        ----------------------------------------------------
+
+        depth -= 1
+
+        task.wait()
+
+    end
+
+end
+
+
+------------------------------------------------------------
+-- AUTO MINE
+------------------------------------------------------------
+
+tabMain:addToggle(
+    "Auto Mine",
+    {
+        Title = "Auto Mine",
+        Default = false
+    },
+    function(value)
+
+        G.Settings["Auto Mine"] = value
+
+        if value then
+
+            task.spawn(function()
+
+                ------------------------------------------------
+                -- FIRST GO FROM 0 TO -800
+                ------------------------------------------------
+
+                local reached800 =
+                    mineDownTo800()
+
+                if not reached800 then
+                    return
+                end
+
+                if not G.Settings["Auto Mine"] then
+                    return
+                end
+
+                ------------------------------------------------
+                -- THEN RANDOM MINE
+                -- 10 EACH LAYER
+                ------------------------------------------------
+
+                randomMineDown()
+
+            end)
 
         end
 
     end
-
-    --------------------------------------------------------
-    -- NEXT DEPTH
-    --------------------------------------------------------
-
-    currentDepth =
-        currentDepth - 1
-
-    task.wait()
-
-end
+)
